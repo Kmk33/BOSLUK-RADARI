@@ -1,0 +1,81 @@
+name: Build BOSLUK RADARI Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find and extract V46 ZIP
+        run: |
+          mkdir -p source
+          ZIP_FILE=$(find . -maxdepth 2 -type f -iname 'BOSLUK*V46*.zip' -print -quit)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "V46 ZIP bulunamadi"
+            find . -maxdepth 2 -type f
+            exit 1
+          fi
+          echo "Found: $ZIP_FILE"
+          unzip -q "$ZIP_FILE" -d source
+          PROJECT_DIR=$(find source -type f -name package.json -printf '%h\n' | head -n 1)
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "package.json bulunamadi"
+            exit 1
+          fi
+          echo "PROJECT=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        working-directory: ${{ env.PROJECT }}
+        run: npm install --no-audit --no-fund
+
+      - name: Run tests
+        working-directory: ${{ env.PROJECT }}
+        run: npm test
+
+      - name: Build web app
+        working-directory: ${{ env.PROJECT }}
+        run: npm run build
+
+      - name: Add Android
+        working-directory: ${{ env.PROJECT }}
+        run: npx cap add android
+
+      - name: Sync Android
+        working-directory: ${{ env.PROJECT }}
+        run: npx cap sync android
+
+      - name: Build APK
+        working-directory: ${{ env.PROJECT }}/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: bosluk-radari-debug-apk
+          path: ${{ env.PROJECT }}/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
