@@ -1,0 +1,70 @@
+name: Build BOŞLUK RADARI Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract V46 source ZIP
+        run: |
+          mkdir -p source
+          unzip -q BOSLUK_RADARI_V46_ANDROID_APK_ZINCIRI.zip -d source
+          echo "PROJECT=$(find source -name package.json -printf '%h\n' | head -n 1)" >> "$GITHUB_ENV"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        working-directory: ${{ env.PROJECT }}
+        run: npm install --no-audit --no-fund
+
+      - name: Run tests
+        working-directory: ${{ env.PROJECT }}
+        run: npm test
+
+      - name: Build web app
+        working-directory: ${{ env.PROJECT }}
+        run: npm run build
+
+      - name: Add Android
+        working-directory: ${{ env.PROJECT }}
+        run: npx cap add android
+
+      - name: Sync Android
+        working-directory: ${{ env.PROJECT }}
+        run: npx cap sync android
+
+      - name: Build APK
+        working-directory: ${{ env.PROJECT }}/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: bosluk-radari-debug-apk
+          path: ${{ env.PROJECT }}/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
